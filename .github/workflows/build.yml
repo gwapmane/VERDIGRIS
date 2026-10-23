@@ -1,0 +1,167 @@
+name: Build VERDIGRIS
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  dsp-tests:
+    name: DSP self-test (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run the DSP self-test
+        run: |
+          g++ -std=c++17 -O2 -o verdigris_selftest tests/selftest.cpp
+          ./verdigris_selftest
+
+  windows-vst3:
+    name: Windows VST3 + Standalone
+    runs-on: windows-latest
+    needs: dsp-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      # First try: everything, including MP4/MOV video in the window.
+      - name: Build (full)
+        id: full
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          cmake -B build -A x64 -DVERDIGRIS_BUILD_TOOLS=OFF -DVERDIGRIS_VIDEO_MF=ON
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          cmake --build build --config Release --target VERDIGRIS_VST3 --parallel
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          cmake --build build --config Release --target VERDIGRIS_Standalone --parallel
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      # Safety net: if the step above failed, build again without MP4 video (GIF still works)
+      # so there is always a plugin to download.
+      - name: Build (without MP4 video support)
+        if: steps.full.outcome == 'failure'
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
+          cmake -B build -A x64 -DVERDIGRIS_BUILD_TOOLS=OFF -DVERDIGRIS_VIDEO_MF=OFF
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          cmake --build build --config Release --target VERDIGRIS_VST3 --parallel
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          cmake --build build --config Release --target VERDIGRIS_Standalone --parallel
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Collect
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item -Recurse "build/VERDIGRIS_artefacts/Release/VST3/VERDIGRIS.vst3" "dist/VERDIGRIS.vst3"
+          Copy-Item "build/VERDIGRIS_artefacts/Release/Standalone/VERDIGRIS.exe" "dist/VERDIGRIS-Standalone.exe"
+          Copy-Item "packaging/INSTALL.bat" "dist/INSTALL.bat"
+          Copy-Item "packaging/READ-ME-FIRST.txt" "dist/READ-ME-FIRST.txt"
+          if ("${{ steps.full.outcome }}" -eq "failure") {
+            Set-Content -Path "dist/NOTE-built-without-mp4-video.txt" -Value "This build has no MP4/MOV video support (the fallback build was used). GIF videos still work."
+          }
+          Get-ChildItem -Recurse dist | Select-Object FullName, Length
+
+      - name: Upload (this is the download on the run page)
+        uses: actions/upload-artifact@v4
+        with:
+          name: VERDIGRIS-windows-vst3
+          path: dist/
+          if-no-files-found: error
+
+  # ----------------------------------------------------------------------------------------------
+  # Mac, built natively for Intel Macs (like a 2017 MacBook Pro) AND tested on a real Intel Mac in the
+  # cloud. The download contains VERDIGRIS-mac.zip plus three small report files (BUILD-INFO.txt,
+  # pluginval-vst3.txt, auval.txt) that say whether the plugin really loads.
+  # ----------------------------------------------------------------------------------------------
+  macos-intel:
+    name: macOS Intel VST3 + AU + Standalone
+    runs-on: macos-15-intel
+    needs: dsp-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DVERDIGRIS_BUILD_TOOLS=OFF \
+                -DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13
+          cmake --build build --config Release --parallel 4 --target VERDIGRIS_VST3 VERDIGRIS_AU VERDIGRIS_Standalone
+
+      - name: Collect and sign (ad-hoc)
+        run: |
+          mkdir -p dist/VERDIGRIS-mac out/reports
+          for name in VERDIGRIS.vst3 VERDIGRIS.component VERDIGRIS.app; do
+            found=$(find build -maxdepth 6 -name "$name" -type d | head -1)
+            if [ -z "$found" ]; then echo "MISSING: $name" >> out/reports/BUILD-INFO.txt; continue; fi
+            codesign --force --deep --sign - "$found"
+            cp -R "$found" dist/VERDIGRIS-mac/
+          done
+          cat > dist/VERDIGRIS-mac/MAC-INSTALL.txt <<'TXT'
+          VERDIGRIS on a Mac
+          ===============
+          1. Double-click VERDIGRIS-mac.zip so it unpacks into a folder called VERDIGRIS-mac.
+          2. Open the Terminal app, paste these lines one block at a time, press Return, type your Mac password if asked
+             (nothing shows while you type - that is normal):
+
+             sudo mkdir -p /Library/Audio/Plug-Ins/VST3 /Library/Audio/Plug-Ins/Components
+             sudo cp -R ~/Downloads/VERDIGRIS-mac/VERDIGRIS.vst3 /Library/Audio/Plug-Ins/VST3/
+             sudo cp -R ~/Downloads/VERDIGRIS-mac/VERDIGRIS.component /Library/Audio/Plug-Ins/Components/
+             sudo xattr -cr /Library/Audio/Plug-Ins/VST3/VERDIGRIS.vst3 /Library/Audio/Plug-Ins/Components/VERDIGRIS.component
+
+             (If you unpacked it somewhere other than Downloads, change ~/Downloads to that folder.)
+          3. Quit FL Studio completely and open it again.
+          4. FL Studio: Options > Manage plugins > click "Find installed plugins" (leave "Verify plugins" ticked).
+          5. Look for VERDIGRIS in the list. You may see it twice (VST3 and AU) - either one is fine.
+
+          The standalone app is VERDIGRIS.app. Right-click it > Open the first time.
+          TXT
+          # the zip keeps file permissions, which the artifact download itself would not
+          (cd dist && ditto -c -k --keepParent VERDIGRIS-mac ../out/VERDIGRIS-mac.zip)
+
+      - name: Report - what exactly was built
+        continue-on-error: true
+        run: |
+          R=out/reports/BUILD-INFO.txt
+          {
+            echo "== Mac this was built and tested on =="; sw_vers; uname -m
+            for b in dist/VERDIGRIS-mac/VERDIGRIS.vst3 dist/VERDIGRIS-mac/VERDIGRIS.component dist/VERDIGRIS-mac/VERDIGRIS.app; do
+              [ -d "$b" ] || continue
+              exe=$(ls "$b"/Contents/MacOS/* | head -1)
+              echo; echo "=================== $b"
+              echo "-- architectures:"; lipo -info "$exe"
+              echo "-- minimum macOS it asks for:"; otool -l "$exe" | grep -A4 -E "LC_BUILD_VERSION|LC_VERSION_MIN_MACOSX" | head -8
+              echo "-- libraries it needs:"; otool -L "$exe"
+              echo "-- signature:"; codesign -dvv "$b" 2>&1 | head -12
+              echo "-- signature check:"; codesign --verify --deep --strict --verbose=2 "$b" 2>&1 | head -5
+            done
+            echo; echo "== bundle layout =="; (cd dist/VERDIGRIS-mac && ls -la VERDIGRIS.vst3/Contents VERDIGRIS.vst3/Contents/MacOS 2>&1)
+            echo; echo "== Info.plist (VST3) =="; plutil -p dist/VERDIGRIS-mac/VERDIGRIS.vst3/Contents/Info.plist 2>&1 | head -30
+          } >> "$R" 2>&1
+          cat "$R"
+
+      - name: Test - does the VST3 really load? (pluginval)
+        continue-on-error: true
+        run: |
+          curl -sL -o pv.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip
+          unzip -q pv.zip
+          ./pluginval.app/Contents/MacOS/pluginval --strictness-level 5 --skip-gui-tests --validate-in-process \
+            dist/VERDIGRIS-mac/VERDIGRIS.vst3 > out/reports/pluginval-vst3.txt 2>&1 || true
+          tail -40 out/reports/pluginval-vst3.txt
+
+      - name: Test - does the Audio Unit really load? (auval)
+        continue-on-error: true
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R dist/VERDIGRIS-mac/VERDIGRIS.component ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          sleep 3
+          { auval -a | grep -i -E "verdigris|Vrdg" ; echo "---"; auval -v aumf Vrdg Vrds ; } > out/reports/auval.txt 2>&1 || true
+          tail -30 out/reports/auval.txt
+
+      - name: Upload (this is the download on the run page)
+        uses: actions/upload-artifact@v4
+        with:
+          name: VERDIGRIS-macos-intel
+          path: out/
+          if-no-files-found: error
