@@ -1,0 +1,43 @@
+VERDIGRIS  v0.1  -  Windows VST3 + Standalone
+
+QUICK START (FL Studio)
+1. Unzip this whole download (right-click > Extract All). Don't run things from inside the zip.
+2. Double-click INSTALL.bat and click Yes when Windows asks.
+   (It copies VERDIGRIS.vst3 into  C:\Program Files\Common Files\VST3 , the folder FL Studio scans.)
+3. Open FL Studio > Options > Manage plugins > Find installed plugins (scan).
+4. Add VERDIGRIS to a mixer insert slot (it is an effect): click an empty slot, pick VERDIGRIS.
+
+No install needed to just try it: double-click VERDIGRIS-Standalone.exe.
+
+If Windows says "protected your PC": click More info > Run anyway (the plugin is not code-signed).
+
+WHAT IT DOES
+A fuzz pedal. The sound comes from a model of a two-transistor fuzz circuit (the kind in classic fuzz boxes), not a
+simple distortion curve - so it cleans up when you turn your guitar down, sags when the battery is starved, and
+reacts to how hard you play.
+
+THE KNOBS
+ FUZZ    how hard the transistors are pushed
+ BIAS    where the transistors sit - low is spitty and gated, high is smooth and fat
+ VOLUME  the output level (0 - 10)
+THE TWO TOGGLES (bottom): TYPE (Ge = warm and woolly, Si = tight and fierce) and VOICING (FAT, ZONK, VIN).
+THE SIX SIDE LEVERS (up = on). Flip them as fast as you like - they fade in and out with no clicks.
+  Tap a lever and it stays. HOLD it (about a third of a second) and it is only on while you hold it.
+  The small knob under each one sets how much:
+   OCTAVE  adds a ringing octave up (BLEND)        STARVE  sags the battery so it dies and sputters (DEPTH)
+   CHOP    chops the fuzz in time with your DAW (PATTERN)   CRUSH  crushes it into gritty digital fuzz (BITE)
+   WASH    a big fuzzy reverb wash (MIX)           SWELL   the fuzz swells in after every note (TIME)
+THE SMALL LEVER at the bottom left: A / LIVE / B - two memory slots for quick sound changes.
+The footswitch: tap = fuzz on / off. HOLD = momentary.
+
+IN THE PLUGIN
+- Bar on top: < preset name >  (click the name for the list, factory presets + My Presets), Save, S/M/L window size,
+  the up-arrow button hides the bar so only the pedal shows (tiny round handle top-left brings it back), gear = settings.
+- The window in the middle is a little scope: the transfer curve (what goes in against what comes out), the waveform
+  (dim = your guitar, bright = the fuzz), and the battery, Chop pattern and Swell.
+- Settings > LOOK: body colour, lights colour, texture (hammered, crinkle, flake, brushed), your own picture,
+  your own video / GIF / picture in the window (GIF and pictures anywhere; MP4/MOV/WMV/AVI on Windows).
+- Settings > SOUND: extras for the side levers, tempo, tone / mids / gate / battery and other "under the hood" controls,
+  Ramp (the knobs move by themselves), levels, and MIDI learn.
+- MIDI knobs: right-click any knob, lever or the footswitch on the pedal, then move a knob on your controller.
+  Or use FL's own way: plugin menu > Parameters > Link all parameters.
